@@ -1,13 +1,11 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
-#define STB_IMAGE_RESIZE_IMPLEMENTATION
 #define BYTE_BOUND(value) value < 0 ? 0 : (value > 255 ? 255 : value)
 
 #include "Image.h"
 
 #include "stb_image.h"
 #include "stb_image_write.h"
-#include "stb_image_resize.h"
 
 Image::Image(const char* filename) {
     if(read(filename)) {
@@ -94,57 +92,6 @@ Image& Image::overlay(const Image& source, int x, int y) {
     }
 
     return *this;
-}
-
-Image& Image::resize(float scale) {
-    uint16_t rw = (int)ceil(scale * w);
-    uint16_t rh = (int)ceil(scale * h);
-    uint8_t* resizedImage = new uint8_t[(int)ceil(rw * rh * channels)];
-
-    stbir_resize_uint8(data, w, h, 0, resizedImage, rw, rh, 0, channels);
-
-    w = rw;
-    h = rh;
-    size = w * h * channels;
-
-    delete [] data;
-    data = resizedImage;
-    resizedImage = nullptr;
-
-    return *this;
-}
-
-Image& Image::resize(uint16_t rw, uint16_t rh) {
-    uint8_t* resizedImage = new uint8_t[(int)ceil(rw * rh * channels)];
-
-    stbir_resize_uint8(data, w, h, 0, resizedImage, rw, rh, 0, channels);
-
-    w = rw;
-    h = rh;
-    size = w * h * channels;
-
-    delete [] data;
-    data = resizedImage;
-    resizedImage = nullptr;
-
-    return *this;
-}
-
-Image Image::resizeNew(uint16_t rw, uint16_t rh) {
-    Image new_version = *this;
-    uint8_t* resizedImage = new uint8_t[(int)ceil(rw * rh * channels)];
-
-    stbir_resize_uint8(new_version.data, w, h, 0, resizedImage, rw, rh, 0, channels);
-
-    new_version.w = rw;
-    new_version.h = rh;
-    new_version.size = w * h * channels;
-
-    delete [] new_version.data;
-    new_version.data = resizedImage;
-    resizedImage = nullptr;
-
-    return new_version;
 }
 
 Image& Image::resizeFast(uint16_t rw, uint16_t rh) {
