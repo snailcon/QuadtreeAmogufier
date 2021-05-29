@@ -27,9 +27,6 @@ struct Image {
     Image& colorMask(float r, float g, float b);
     Image colorMaskNew(float r, float g, float b);
     Image& overlay(const Image& source, int x, int y);
-    Image& resize(float scale);
-    Image& resize(uint16_t rw, uint16_t rh);
-    Image resizeNew(uint16_t rw, uint16_t rh);
     Image& resizeFast(uint16_t rw, uint16_t rh); // nearest neighbor
     Image resizeFastNew(uint16_t rw, uint16_t rh);
     Image cropNew(uint16_t cx, uint16_t cy, uint16_t cw, uint16_t ch);
