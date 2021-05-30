@@ -13,6 +13,5 @@ change the code according to your needs first
 - Specify the frame range in main.cpp
 - **Warning** slow
 
-this uses stb_image and stb_image_write
-
-https://github.com/nothings/stb
+# Credits
+This uses [stb_image, stb_image_write](https://github.com/nothings/stb), and [thread-pool](https://github.com/bshoshany/thread-pool)
