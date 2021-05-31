@@ -2,10 +2,26 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define BYTE_BOUND(value) value < 0 ? 0 : (value > 255 ? 255 : value)
 
+#include <array>
 #include "Image.h"
 
 #include "lib/stb_image.h"
 #include "lib/stb_image_write.h"
+
+static std::array<Image, 12> RESOURCES = {
+        Image("res/0_big.png"),
+        Image("res/1_big.png"),
+        Image("res/2_big.png"),
+        Image("res/3_big.png"),
+        Image("res/4_big.png"),
+        Image("res/5_big.png"),
+        Image("res/0_eye_big.png"),
+        Image("res/1_eye_big.png"),
+        Image("res/2_eye_big.png"),
+        Image("res/3_eye_big.png"),
+        Image("res/4_eye_big.png"),
+        Image("res/5_eye_big.png"),
+};
 
 Image::Image(const char* filename) {
     if(read(filename)) {
@@ -242,12 +258,9 @@ Image Image::quadifyFrame(int i) {
     Image frame(w, h, 3); // empty black frame
 
     int index = floor((i % 12)/2);
-    std::string amogus_frame("res/" + std::to_string(index) + "_big.png");
-    std::string amogus_eye_frame("res/" + std::to_string(index) + "_eye_big.png");
-    Image amogus(amogus_frame.c_str());
-    Image amogus_eye(amogus_eye_frame.c_str());
-
-    subdivide(0, 0, w, h, i, frame, amogus, amogus_eye);
+    Image a = RESOURCES[index];
+    Image b = RESOURCES[index + 6];
+    subdivide(0, 0, w, h, i, frame, a, b);
 
     return frame;
 }
