@@ -24,7 +24,7 @@ int main() {
 }
 
 void work(int i, const std::filesystem::path &frame_name, const std::filesystem::path &save_loc) {
-    std::cout << i << " - " << frame_name << std::endl;
+    std::cout << std::to_string(i) + " - " + frame_name.string() + "\n" << std::flush;
 
     Image frame(frame_name.string().c_str());
     Image frame_done = frame.quadifyFrame(i);

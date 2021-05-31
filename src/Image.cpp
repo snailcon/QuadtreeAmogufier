@@ -257,10 +257,10 @@ Image& Image::rectOutline(uint8_t r, uint8_t g, uint8_t b) {
 Image Image::quadifyFrame(int i) {
     Image frame(w, h, 3); // empty black frame
 
-    int index = floor((i % 12)/2);
-    Image a = RESOURCES[index];
-    Image b = RESOURCES[index + 6];
-    subdivide(0, 0, w, h, i, frame, a, b);
+    int entries = RESOURCES.size() / 2;
+    int time = 2;
+    int index = floor((i % (entries / 2 * time)) / time);
+    subdivide(0, 0, w, h, i, frame, RESOURCES[index], RESOURCES[index + entries]);
 
     return frame;
 }
@@ -310,5 +310,9 @@ int Image::subdivideCheck(uint16_t sx, uint16_t sy, uint16_t sw, uint16_t sh) { 
         }
     }
 
-    return (int)sum/(sh*sw);
+    if (sum == 0) {
+        return 0;
+    } else {
+        return (int) sum / (sh * sw);
+    }
 }
