@@ -9,7 +9,7 @@
 
 Image::Image() : w(100), h(100), channels(3) {
     size = w*h*channels;
-    data = new uint8_t[size];
+    data = std::vector<uint8_t>(size);
 }
 
 Image::Image(const char* filename) {
@@ -23,29 +23,32 @@ Image::Image(const char* filename) {
 
 Image::Image(int w, int h, int channels) : w(w), h(h), channels(channels) {
     size = w*h*channels;
-    data = new uint8_t[size];
+    data = std::vector<uint8_t>(size);
 }
 
-Image::Image(const Image& img) : Image(img.w, img.h, img.channels) {
-    memcpy(data, img.data, size);
+Image::Image(const Image& img) : w(img.w), h(img.h), channels(img.channels), data(img.data) {
+    size = w*h*channels;
 }
 
 bool Image::read(const char* filename) {
-    data = stbi_load(filename, &w, &h, &channels, 0);
-    return data != NULL;
+    uint8_t* temp = stbi_load(filename, &w, &h, &channels, 0);
+    size = w*h*channels;
+    data.insert(data.end(), &temp[0], &temp[size]);
+    stbi_image_free(temp);
+    return true;
 }
 
-bool Image::write(const char* filename) {
+bool Image::write(const char* filename) const {
     int success;
-    success = stbi_write_png(filename, w, h, channels, data, w*channels);
+    success = stbi_write_png(filename, w, h, channels, data.data(), w*channels);
     return success != 0;
 }
 
 Image& Image::colorMask(float r, float g, float b) {
     for (int i = 0; i < size; i+=channels) {
-        data[i]   *= r;
-        data[i+1] *= g;
-        data[i+2] *= b;
+        data.at(i)   *= r;
+        data.at(i+1) *= g;
+        data.at(i+2) *= b;
     }
     return *this;
 }
@@ -53,39 +56,38 @@ Image& Image::colorMask(float r, float g, float b) {
 Image Image::colorMaskNew(float r, float g, float b) {
     Image new_version = *this;
     for (int i = 0; i < size; i+=channels) {
-        new_version.data[i]   *= r;
-        new_version.data[i+1] *= g;
-        new_version.data[i+2] *= b;
+        new_version.data.at(i)   *= r;
+        new_version.data.at(i+1) *= g;
+        new_version.data.at(i+2) *= b;
     }
     return new_version;
 }
 
 Image& Image::overlay(const Image& source, int x, int y) {
 
-    uint8_t* srcPx;
-    uint8_t* dstPx;
-
     for (int sy = 0; sy < source.h; sy++) {
         if (sy + y < 0) continue; else if (sy + y >= h) break;
         for (int sx = 0; sx < source.w; sx++) {
             if (sx + x < 0) continue; else if (sx + x >= w) break;
-            srcPx = &source.data[(sx + sy * source.w) * source.channels];
-            dstPx = &data[(sx + x + (sy + y) * w) * channels];
 
-            float srcAlpha = source.channels < 4 ? 1 : srcPx[3] / 255.f;
-            float dstAlpha = channels < 4 ? 1 : dstPx[3] / 255.f;
+            float srcAlpha = source.channels < 4 ? 1 : source.data.at(((sx + sy * source.w) * source.channels) + 3) / 255.f;
+            float dstAlpha = channels < 4 ? 1 : data.at(((sx + x + (sy + y) * w) * channels) + 3) / 255.f;
 
             if (srcAlpha > .99 && dstAlpha > .99) {
-                memcpy(dstPx, srcPx, channels);
+                for (int channel = 0; channel < channels; channel++) {
+                    data.at(((sx + x + (sy + y) * w) * channels) + channel) = source.data.at(((sx + sy * source.w) * source.channels) + channel);
+                }
             } else {
                 float outAlpha = srcAlpha + dstAlpha * (1 - srcAlpha);
                 if (outAlpha < .01) {
-                    memset(dstPx, 0, channels);
+                    for (int channel = 0; channel < channels; channel++) {
+                        data.at(((sx + x + (sy + y) * w) * channels) + channel) = 0;
+                    }
                 } else {
                     for (int channel = 0; channel < channels; channel++) {
-                        dstPx[channel] = (uint8_t)BYTE_BOUND((srcPx[channel]/255.f * srcAlpha + dstPx[channel]/255.f * dstAlpha * (1 - srcAlpha)) / outAlpha * 255.f);
+                        data.at(((sx + x + (sy + y) * w) * channels) + channel) = (uint8_t)BYTE_BOUND((source.data.at(((sx + sy * source.w) * source.channels) + channel)/255.f * srcAlpha + data.at(((sx + x + (sy + y) * w) * channels) + channel)/255.f * dstAlpha * (1 - srcAlpha)) / outAlpha * 255.f);
                     }
-                    if (channels > 3) dstPx[3] = (uint8_t)BYTE_BOUND(outAlpha * 255.f);
+                    if (channels > 3) data.at(((sx + x + (sy + y) * w) * channels) + 3) = (uint8_t)BYTE_BOUND(outAlpha * 255.f);
                 }
             }
         }
@@ -95,7 +97,7 @@ Image& Image::overlay(const Image& source, int x, int y) {
 }
 
 Image& Image::resizeFast(uint16_t rw, uint16_t rh) {
-    uint8_t* resizedImage = new uint8_t[(int)ceil(rw * rh * channels)];
+    std::vector<uint8_t> resizedImage(rw * rh * channels);
 
     double x_ratio = w/(double)rw;
     double y_ratio = h/(double)rh;
@@ -104,7 +106,9 @@ Image& Image::resizeFast(uint16_t rw, uint16_t rh) {
         for (int x = 0; x < rw; x++) {
             rx = floor(x * x_ratio);
             ry = floor(y * y_ratio);
-            memcpy(&resizedImage[((y*rw)+x) * channels], &data[((int)((ry*w)+rx)) * channels], channels);
+            for (int channel = 0; channel < channels; channel++) {
+                resizedImage.at((((y*rw)+x) * channels) + channel) = data.at((((ry*w)+rx) * channels) + channel);
+            }
         }                
     }          
 
@@ -112,16 +116,14 @@ Image& Image::resizeFast(uint16_t rw, uint16_t rh) {
     h = rh;
     size = w * h * channels;
 
-    delete [] data;
     data = resizedImage;
-    resizedImage = nullptr;
 
     return *this;
 }
 
 Image Image::resizeFastNew(uint16_t rw, uint16_t rh) {
     Image new_version = *this;
-    uint8_t* resizedImage = new uint8_t[(int)ceil(rw * rh * channels)];
+    std::vector<uint8_t> resizedImage(rw * rh * channels);
 
     double x_ratio = w/(double)rw;
     double y_ratio = h/(double)rh;
@@ -130,17 +132,17 @@ Image Image::resizeFastNew(uint16_t rw, uint16_t rh) {
         for (int x = 0; x < rw; x++) {
             rx = floor(x * x_ratio);
             ry = floor(y * y_ratio);
-            memcpy(&resizedImage[((y*rw)+x) * channels], &data[((int)((ry*w)+rx)) * channels], channels);
+            for (int channel = 0; channel < channels; channel++) {
+                resizedImage.at((((y*rw)+x) * channels) + channel) = data.at((((ry*w)+rx) * channels) + channel);
+            }
         }                
-    }          
+    }           
 
     new_version.w = rw;
     new_version.h = rh;
     new_version.size = rw * rh * channels;
 
-    delete [] new_version.data;
     new_version.data = resizedImage;
-    resizedImage = nullptr;
 
     return new_version;
 }
@@ -148,15 +150,15 @@ Image Image::resizeFastNew(uint16_t rw, uint16_t rh) {
 Image Image::cropNew(uint16_t cx, uint16_t cy, uint16_t cw, uint16_t ch) {
     Image new_version = *this;
 
-    uint8_t* croppedImage = new uint8_t[cw * ch * channels];
-
-    memset(croppedImage, 0, cw * ch * channels);
+    std::vector<uint8_t> croppedImage(cw * ch * channels);
 
     for (uint16_t y = 0; y < ch; y++) {
         if (y + cy >= h) break;
         for (uint16_t x = 0; x < cw; x++) {
             if (x + cx >= w) break;
-            memcpy(&croppedImage[(x + y * cw) * channels], &data[(x + cx + (y + cy) * w) * channels], channels);
+            for (int channel = 0; channel < channels; channel++) {
+                croppedImage.at(((x + y * cw) * channels) + channel) = data.at(((x + cx + (y + cy) * w) * channels) + channel);
+            }
         }
     }
 
@@ -164,9 +166,7 @@ Image Image::cropNew(uint16_t cx, uint16_t cy, uint16_t cw, uint16_t ch) {
     new_version.h = ch;
     new_version.size = cw*ch*channels;
 
-    delete [] new_version.data;
     new_version.data = croppedImage;
-    croppedImage = nullptr;
 
     return new_version;
 }
@@ -177,7 +177,9 @@ Image& Image::rect(uint16_t cx, uint16_t cy, uint16_t cw, uint16_t ch, uint8_t r
         if (y >= h) break;
         for (uint16_t x = cx; x < cw + cx; x++) {
             if (x >= w) break;
-            memcpy(&data[(x + y * w) * channels], &colors, channels);
+            for (int channel = 0; channel < channels; channel++) {
+                data.at(((x + y * w) * channels) + channel) = colors[channel];
+            }
         }
     }
 
@@ -195,7 +197,9 @@ Image& Image::rectOutline(uint16_t cx, uint16_t cy, uint16_t cw, uint16_t ch, ui
         if (y >= h) break;
         for (uint16_t x = cx; x < cw + cx; x++) {
             if (x >= w) break;
-            memcpy(&data[(x + y * w) * channels], &colors, channels);
+            for (int channel = 0; channel < channels; channel++) {
+                data.at(((x + y * w) * channels) + channel) = colors[channel];
+            }
         }
     }
 
@@ -203,7 +207,9 @@ Image& Image::rectOutline(uint16_t cx, uint16_t cy, uint16_t cw, uint16_t ch, ui
         if (x >= w) break;
         for (uint16_t y = cy; y < ch + cy; y++) {
             if (y >= h) break;
-            memcpy(&data[(x + y * w) * channels], &colors, channels);
+            for (int channel = 0; channel < channels; channel++) {
+                data.at(((x + y * w) * channels) + channel) = colors[channel];
+            }
         }
     }
 
@@ -214,7 +220,9 @@ Image& Image::rect(uint8_t r, uint8_t g, uint8_t b) {
     uint8_t colors [4] = {r, g, b, 255}; 
     for (uint16_t y = 0; y < h; y++) {
         for (uint16_t x = 0; x < w; x++) {
-            memcpy(&data[(x + y * w) * channels], &colors, channels);
+            for (int channel = 0; channel < channels; channel++) {
+                data.at(((x + y * w) * channels) + channel) = colors[channel];
+            }
         }
     }
 
@@ -225,13 +233,17 @@ Image& Image::rectOutline(uint8_t r, uint8_t g, uint8_t b) {
     uint8_t colors [4] = {r, g, b, 255}; 
     for (uint16_t y = 0; y < h; y+=h-1) {
         for (uint16_t x = 0; x < w; x++) {
-            memcpy(&data[(x + y * w) * channels], &colors, channels);
+            for (int channel = 0; channel < channels; channel++) {
+                data.at(((x + y * w) * channels) + channel) = colors[channel];
+            }
         }
     }
 
     for (uint16_t x = 0; x < w; x+=w-1) {
         for (uint16_t y = 0; y < h; y++) {
-            memcpy(&data[(x + y * w) * channels], &colors, channels);
+            for (int channel = 0; channel < channels; channel++) {
+                data.at(((x + y * w) * channels) + channel) = colors[channel];
+            }
         }
     }
 
@@ -283,7 +295,7 @@ int Image::subdivideCheckBW(uint16_t sx, uint16_t sy, uint16_t sw, uint16_t sh) 
 
     for (uint16_t y = sy; y < sh + sy; y++) {
         for (uint16_t x = sx; x < sw + sx; x++) {
-            sum += data[(x + y * w) * channels];
+            sum += data.at((x + y * w) * channels);
         }
     }
 
@@ -333,22 +345,22 @@ void Image::subdivideRGB(uint16_t sx, uint16_t sy, uint16_t sw, uint16_t sh, Ima
 
 std::tuple<bool, int, int, int> Image::subdivideCheckRGB(uint16_t sx, uint16_t sy, uint16_t sw, uint16_t sh) {
     bool quad = true;
-    uint8_t colR = data[(sx + sy * w) * channels];
-    uint8_t colG = data[(sx + sy * w) * channels + 1];
-    uint8_t colB = data[(sx + sy * w) * channels + 2];
+    uint8_t colR = data.at((sx + sy * w) * channels);
+    uint8_t colG = data.at((sx + sy * w) * channels + 1);
+    uint8_t colB = data.at((sx + sy * w) * channels + 2);
     int sumR = 0;
     int sumG = 0;
     int sumB = 0;
 
     for (uint16_t y = sy; y < sh + sy; y++) {
         for (uint16_t x = sx; x < sw + sx; x++) {
-            uint8_t pixR = data[(x + y * w) * channels];
+            uint8_t pixR = data.at((x + y * w) * channels);
             sumR += pixR;
             if (colR != pixR) quad = false;
-            uint8_t pixG = data[(x + y * w) * channels + 1];
+            uint8_t pixG = data.at((x + y * w) * channels + 1);
             sumG += pixG;
-            if (colR != pixR) quad = false;
-            uint8_t pixB = data[(x + y * w) * channels + 2];
+            if (colG != pixG) quad = false;
+            uint8_t pixB = data.at((x + y * w) * channels + 2);
             sumB += pixB;
             if (colB != pixB) quad = false;
         }

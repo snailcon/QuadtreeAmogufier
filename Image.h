@@ -11,7 +11,7 @@
 #include <map>
 
 struct Image {
-    uint8_t* data = NULL;
+    std::vector<uint8_t> data;
     size_t size = 0;
     int w;
     int h;
@@ -23,7 +23,7 @@ struct Image {
     Image(const Image& img);
 
     bool read(const char* filename);
-    bool write(const char* filename);
+    bool write(const char* filename) const;
 
     Image& colorMask(float r, float g, float b);
     Image colorMaskNew(float r, float g, float b);

@@ -90,7 +90,8 @@ void createVideoFramesCol(int start, int end, int repeatFrames) {
     std::vector<std::map<std::pair<int, int>, Image>> preloadedResized;
     int width;
     int height;
-    Image first_frame("in/img_0.png");
+    std::string first_name("in/img_" + std::to_string(start) + ".png");
+    Image first_frame(first_name.c_str());
     width = first_frame.w;
     height = first_frame.h;
 
