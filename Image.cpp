@@ -1,6 +1,5 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
-#define BYTE_BOUND(value) value < 0 ? 0 : (value > 255 ? 255 : value)
 
 #include "Image.h"
 
@@ -12,6 +11,20 @@ template <class T> T rescale(T &val, double s) {
     T old = val;
     val = static_cast<T>(old * s);
     return old;
+}
+
+template <class T> T rescale(T &val, uint8_t s) {
+    T old = val;
+    val = old * s / 255;
+    return old;
+}
+
+template <class T> T bound(double x) {
+    if (x < std::numeric_limits<T>::min())
+        return std::numeric_limits<T>::min();
+    if (x > std::numeric_limits<T>::max())
+        return std::numeric_limits<T>::max();
+    return static_cast<T>(std::round(x));
 }
 } // namespace
 
@@ -36,9 +49,16 @@ Image::Image(int w, int h, int channels) : w(w), h(h), channels(channels) {
 
 Image::Image(const Image &img) : w(img.w), h(img.h), channels(img.channels), data(img.data) { size = w * h * channels; }
 
+// uint8_t &Image::operator()(int x, int y, int c) { return data[(x + y * w) * channels + c]; }
+// const uint8_t &Image::operator()(int x, int y, int c) const { return data[(x + y * w) * channels + c]; }
+
+// uint8_t *Image::pixel(int x, int y) { return &(*this)(x, y, 0); }
+// const uint8_t *Image::pixel(int x, int y) const { return &(*this)(x, y, 0); }
+
 bool Image::read(const char *filename) {
     uint8_t *temp = stbi_load(filename, &w, &h, &channels, 0);
     size = w * h * channels;
+    // data.clear();
     data.insert(data.end(), &temp[0], &temp[size]);
     stbi_image_free(temp);
     return true;
@@ -52,13 +72,20 @@ bool Image::write(const char *filename) const {
 
 Image &Image::colorMask(float r, float g, float b) {
     assert(channels == 3);
-    for (int i = 0; i < size; i += channels) {
-        data.at(i) *= r;
-        data.at(i+1) *= g;
-        data.at(i+2) *= b;
-        // rescale(data[i], r);
-        // rescale(data[i + 1], g);
-        // rescale(data[i + 2], b);
+    for (int i = 0; i < data.size(); i += channels) {
+        rescale(data[i], r);
+        rescale(data[i + 1], g);
+        rescale(data[i + 2], b);
+    }
+    return *this;
+}
+
+Image &Image::colorMask(uint8_t r, uint8_t g, uint8_t b) {
+    assert(channels == 3);
+    for (int i = 0; i < data.size(); i += channels) {
+        rescale(data[i], r);
+        rescale(data[i + 1], g);
+        rescale(data[i + 2], b);
     }
     return *this;
 }
@@ -69,88 +96,65 @@ Image Image::colorMaskNew(float r, float g, float b) const {
     return new_version;
 }
 
+Image Image::colorMaskNew(uint8_t r, uint8_t g, uint8_t b) const {
+    Image new_version = *this;
+    new_version.colorMask(r, g, b);
+    return new_version;
+}
+
 Image &Image::overlay(const Image &source, int x, int y) {
 
-    for (int sy = 0; sy < source.h; sy++) {
-        if (sy + y < 0)
-            continue;
-        else if (sy + y >= h)
+    for (int sy = std::max(0, -y); sy < source.h; sy++) {
+        if (sy + y >= h)
             break;
-        for (int sx = 0; sx < source.w; sx++) {
-            if (sx + x < 0)
-                continue;
-            else if (sx + x >= w)
+        for (int sx = std::max(0, -x); sx < source.w; sx++) {
+            if (sx + x >= w)
                 break;
 
-            float srcAlpha =
-                source.channels < 4 ? 1 : source.data.at(((sx + sy * source.w) * source.channels) + 3) / 255.f;
-            float dstAlpha = channels < 4 ? 1 : data.at(((sx + x + (sy + y) * w) * channels) + 3) / 255.f;
+            const uint8_t *srcPixel = source.pixel(sx, sy);
+            uint8_t *dstPixel = pixel(sx + x, sy + y);
+            float srcAlpha = source.channels < 4 ? 1 : srcPixel[3] / 255.f;
+            float dstAlpha = channels < 4 ? 1 : dstPixel[3] / 255.f;
 
             if (srcAlpha > .99 && dstAlpha > .99) {
-                for (int channel = 0; channel < channels; channel++) {
-                    data.at(((sx + x + (sy + y) * w) * channels) + channel) =
-                        source.data.at(((sx + sy * source.w) * source.channels) + channel);
-                }
+                std::copy_n(srcPixel, channels, dstPixel);
             } else {
                 float outAlpha = srcAlpha + dstAlpha * (1 - srcAlpha);
                 if (outAlpha < .01) {
-                    for (int channel = 0; channel < channels; channel++) {
-                        data.at(((sx + x + (sy + y) * w) * channels) + channel) = 0;
-                    }
+                    std::fill_n(dstPixel, channels, 0);
                 } else {
                     for (int channel = 0; channel < channels; channel++) {
-                        data.at(((sx + x + (sy + y) * w) * channels) + channel) = (uint8_t)BYTE_BOUND(
-                            (source.data.at(((sx + sy * source.w) * source.channels) + channel) / 255.f * srcAlpha +
-                             data.at(((sx + x + (sy + y) * w) * channels) + channel) / 255.f * dstAlpha *
-                                 (1 - srcAlpha)) /
-                            outAlpha * 255.f);
+                        dstPixel[channel] = bound<uint8_t>((srcPixel[channel] / 255.f * srcAlpha +
+                                                            dstPixel[channel] / 255.f * dstAlpha * (1 - srcAlpha)) /
+                                                           outAlpha * 255.f);
                     }
                     if (channels > 3)
-                        data.at(((sx + x + (sy + y) * w) * channels) + 3) = (uint8_t)BYTE_BOUND(outAlpha * 255.f);
+                        dstPixel[3] = bound<uint8_t>(outAlpha * 255.f);
                 }
             }
         }
     }
-
-    return *this;
-}
-
-Image &Image::resizeFast(uint16_t rw, uint16_t rh) {
-    std::vector<uint8_t> resizedImage(rw * rh * channels);
-
-    double x_ratio = w / (double)rw;
-    double y_ratio = h / (double)rh;
-    double rx, ry;
-    for (int y = 0; y < rh; y++) {
-        for (int x = 0; x < rw; x++) {
-            rx = floor(x * x_ratio);
-            ry = floor(y * y_ratio);
-            for (int channel = 0; channel < channels; channel++) {
-                resizedImage.at((((y * rw) + x) * channels) + channel) =
-                    data.at((((ry * w) + rx) * channels) + channel);
-            }
-        }
-    }
-
-    w = rw;
-    h = rh;
-    size = w * h * channels;
-
-    data = resizedImage;
 
     return *this;
 }
 
 Image Image::resizeFastNew(uint16_t rw, uint16_t rh) const {
-    Image new_version = *this;
-    new_version.resizeFast(rw, rh);
-    return new_version;
+    Image resizedImage(rw, rh, channels);
+    double x_ratio = w / (double)rw;
+    double y_ratio = h / (double)rh;
+    for (int y = 0; y < rh; y++) {
+        for (int x = 0; x < rw; x++) {
+            int rx = static_cast<int>(x * x_ratio);
+            int ry = static_cast<int>(y * y_ratio);
+            std::copy_n(pixel(rx, ry), channels, resizedImage.pixel(x, y));
+        }
+    }
+    return resizedImage;
 }
 
 Image Image::cropNew(uint16_t cx, uint16_t cy, uint16_t cw, uint16_t ch) const {
-    Image new_version = *this;
 
-    std::vector<uint8_t> croppedImage(cw * ch * channels);
+    Image croppedImage(cw, ch, channels);
 
     for (uint16_t y = 0; y < ch; y++) {
         if (y + cy >= h)
@@ -158,105 +162,11 @@ Image Image::cropNew(uint16_t cx, uint16_t cy, uint16_t cw, uint16_t ch) const {
         for (uint16_t x = 0; x < cw; x++) {
             if (x + cx >= w)
                 break;
-            for (int channel = 0; channel < channels; channel++) {
-                croppedImage.at(((x + y * cw) * channels) + channel) =
-                    data.at(((x + cx + (y + cy) * w) * channels) + channel);
-            }
+            std::copy_n(pixel(x + cx, y + cy), channels, croppedImage.pixel(x, y));
         }
     }
 
-    new_version.w = cw;
-    new_version.h = ch;
-    new_version.size = cw * ch * channels;
-
-    new_version.data = croppedImage;
-
-    return new_version;
-}
-
-Image &Image::rect(uint16_t cx, uint16_t cy, uint16_t cw, uint16_t ch, uint8_t r, uint8_t g, uint8_t b) {
-    uint8_t colors[] = {r, g, b, 255};
-    for (uint16_t y = cy; y < ch + cy; y++) {
-        if (y >= h)
-            break;
-        for (uint16_t x = cx; x < cw + cx; x++) {
-            if (x >= w)
-                break;
-            for (int channel = 0; channel < channels; channel++) {
-                data.at(((x + y * w) * channels) + channel) = colors[channel];
-            }
-        }
-    }
-
-    return *this;
-}
-
-Image &Image::rectOutline(uint16_t cx, uint16_t cy, uint16_t cw, uint16_t ch, uint8_t r, uint8_t g, uint8_t b) {
-
-    if (cw <= 1 || ch <= 1) {
-        return rect(cx, cy, cw, ch, r, g, b);
-    }
-
-    uint8_t colors[4] = {r, g, b, 255};
-    for (uint16_t y = cy; y < ch + cy; y += ch - 1) {
-        if (y >= h)
-            break;
-        for (uint16_t x = cx; x < cw + cx; x++) {
-            if (x >= w)
-                break;
-            for (int channel = 0; channel < channels; channel++) {
-                data.at(((x + y * w) * channels) + channel) = colors[channel];
-            }
-        }
-    }
-
-    for (uint16_t x = cx; x < cw + cx; x += cw - 1) {
-        if (x >= w)
-            break;
-        for (uint16_t y = cy; y < ch + cy; y++) {
-            if (y >= h)
-                break;
-            for (int channel = 0; channel < channels; channel++) {
-                data.at(((x + y * w) * channels) + channel) = colors[channel];
-            }
-        }
-    }
-
-    return *this;
-}
-
-Image &Image::rect(uint8_t r, uint8_t g, uint8_t b) {
-    uint8_t colors[4] = {r, g, b, 255};
-    for (uint16_t y = 0; y < h; y++) {
-        for (uint16_t x = 0; x < w; x++) {
-            for (int channel = 0; channel < channels; channel++) {
-                data.at(((x + y * w) * channels) + channel) = colors[channel];
-            }
-        }
-    }
-
-    return *this;
-}
-
-Image &Image::rectOutline(uint8_t r, uint8_t g, uint8_t b) {
-    uint8_t colors[4] = {r, g, b, 255};
-    for (uint16_t y = 0; y < h; y += h - 1) {
-        for (uint16_t x = 0; x < w; x++) {
-            for (int channel = 0; channel < channels; channel++) {
-                data.at(((x + y * w) * channels) + channel) = colors[channel];
-            }
-        }
-    }
-
-    for (uint16_t x = 0; x < w; x += w - 1) {
-        for (uint16_t y = 0; y < h; y++) {
-            for (int channel = 0; channel < channels; channel++) {
-                data.at(((x + y * w) * channels) + channel) = colors[channel];
-            }
-        }
-    }
-
-    return *this;
+    return croppedImage;
 }
 
 Image Image::quadifyFrameBW(std::map<std::pair<int, int>, Image> &resizedAmogi) const {
@@ -272,24 +182,13 @@ Image Image::quadifyFrameBW(std::map<std::pair<int, int>, Image> &resizedAmogi) 
 void Image::subdivideBW(uint16_t sx, uint16_t sy, uint16_t sw, uint16_t sh, Image &frame,
                         std::map<std::pair<int, int>, Image> &resizedAmogi) const {
 
-    int val = subdivideCheckBW(sx, sy, sw, sh);
+    auto [subdivide, val] = subdivideCheckBW(sx, sy, sw, sh);
 
-    if (val > 0 && val < 255 && sw > 16 && sh > 16) {
-        uint16_t sw_l, sw_r, sh_t, sh_b;
-        if (sw % 2 == 0) {
-            sw_l = sw / 2;
-            sw_r = sw / 2;
-        } else {
-            sw_l = floor(sw / 2);
-            sw_r = ceil(sw / 2) + 1;
-        }
-        if (sh % 2 == 0) {
-            sh_t = sh / 2;
-            sh_b = sh / 2;
-        } else {
-            sh_t = floor(sh / 2);
-            sh_b = ceil(sh / 2) + 1;
-        }
+    if (subdivide && sw > 16 && sh > 16) {
+        uint16_t sw_l = sw / 2;
+        uint16_t sw_r = (sw + 1) / 2;
+        uint16_t sh_t = sh / 2;
+        uint16_t sh_b = (sh + 1) / 2;
         subdivideBW(sx, sy, sw_l, sh_t, frame, resizedAmogi);
         subdivideBW(sx + sw_r, sy, sw_l, sh_t, frame, resizedAmogi);
         subdivideBW(sx, sy + sh_b, sw_l, sh_t, frame, resizedAmogi);
@@ -301,16 +200,21 @@ void Image::subdivideBW(uint16_t sx, uint16_t sy, uint16_t sw, uint16_t sh, Imag
     }
 }
 
-int Image::subdivideCheckBW(uint16_t sx, uint16_t sy, uint16_t sw, uint16_t sh) const {
-    int sum = 0;
+std::tuple<bool, uint8_t> Image::subdivideCheckBW(uint16_t sx, uint16_t sy, uint16_t sw, uint16_t sh) const {
+    double sum = 0;
+    uint8_t min = std::numeric_limits<uint8_t>::max();
+    uint8_t max = std::numeric_limits<uint8_t>::min();
 
     for (uint16_t y = sy; y < sh + sy; y++) {
         for (uint16_t x = sx; x < sw + sx; x++) {
-            sum += data.at((x + y * w) * channels);
+            uint8_t p = pixel(x, y)[0];
+            min = std::min(min, p);
+            max = std::max(max, p);
+            sum += p;
         }
     }
 
-    return (int)sum / (sh * sw);
+    return {max - min > 4, bound<uint8_t>(sum / (sh * sw))};
 }
 
 Image Image::quadifyFrameRGB(std::map<std::pair<int, int>, Image> &resizedAmogi) const {
@@ -331,21 +235,10 @@ void Image::subdivideRGB(uint16_t sx, uint16_t sy, uint16_t sw, uint16_t sh, Ima
     int valB = std::get<3>(check);
 
     if ((!quad && sw > 8 && sh > 8) || (sw > 32 && sh > 32)) {
-        uint16_t sw_l, sw_r, sh_t, sh_b;
-        if (sw % 2 == 0) {
-            sw_l = sw / 2;
-            sw_r = sw / 2;
-        } else {
-            sw_l = floor(sw / 2);
-            sw_r = ceil(sw / 2) + 1;
-        }
-        if (sh % 2 == 0) {
-            sh_t = sh / 2;
-            sh_b = sh / 2;
-        } else {
-            sh_t = floor(sh / 2);
-            sh_b = ceil(sh / 2) + 1;
-        }
+        uint16_t sw_l = sw / 2;
+        uint16_t sw_r = (sw + 1) / 2;
+        uint16_t sh_t = sh / 2;
+        uint16_t sh_b = (sh + 1) / 2;
         subdivideRGB(sx, sy, sw_l, sh_t, frameRGB, resizedAmogi);
         subdivideRGB(sx + sw_r, sy, sw_l, sh_t, frameRGB, resizedAmogi);
         subdivideRGB(sx, sy + sh_b, sw_l, sh_t, frameRGB, resizedAmogi);
@@ -387,18 +280,7 @@ std::tuple<bool, int, int, int> Image::subdivideCheckRGB(uint16_t sx, uint16_t s
 
 void Image::subdivideValues(int sx, int sy, int sw, int sh, std::map<std::pair<int, int>, Image> &image_map) const {
     if (sw > 4 && sh > 4) {
-        int sw_l, sw_r, sh_t, sh_b;
-        if (sw % 2 == 0) {
-            sw_l = sw / 2;
-        } else {
-            sw_l = floor(sw / 2);
-        }
-        if (sh % 2 == 0) {
-            sh_t = sh / 2;
-        } else {
-            sh_t = floor(sh / 2);
-        }
-        subdivideValues(sx, sy, sw_l, sh_t, image_map);
+        subdivideValues(sx, sy, sw / 2, sh / 2, image_map);
     }
 
     if (image_map.count(std::make_pair(sw, sh)) == 0) {

@@ -1,22 +1,22 @@
-#include <vector>
-#include <string>
 #include <map>
+#include <string>
+#include <vector>
 
-#include "lib/thread_pool.hpp"
 #include "Image.h"
+#include "lib/thread_pool.hpp"
 
-void workBW(int i, int index, std::vector<std::map<std::pair<int, int>, Image>>& preloadedResized);
-void workCol(int i, int index, std::vector<std::map<std::pair<int, int>, Image>>& preloadedResized);
+void workBW(int i, int index, std::vector<std::map<std::pair<int, int>, Image>> &preloadedResized);
+void workCol(int i, int index, std::vector<std::map<std::pair<int, int>, Image>> &preloadedResized);
 
 void createVideoFramesBW(int start, int end, int repeatFrames);
 void createVideoFramesCol(int start, int end, int repeatFrames);
 
 void showUsage() {
-    std::cout<<"Usage: [?.exe] [BW | Col] [Start] [End] (SFRC)\n"
-             <<"BW | Col:   Black and White or Colored Image Sequence\n"
-             <<"Start:      Frame to start on (int)\n"
-             <<"End:        Frame to end on (int)\n"
-             <<"SFRC:       How often to repeat Sprite frames (optional, default 2)"<<std::endl;
+    std::cout << "Usage: [?.exe] [BW | Col] [Start] [End] (SFRC)\n"
+              << "BW | Col:   Black and White or Colored Image Sequence\n"
+              << "Start:      Frame to start on (int)\n"
+              << "End:        Frame to end on (int)\n"
+              << "SFRC:       How often to repeat Sprite frames (optional, default 2)" << std::endl;
 }
 
 int main(int argc, char *argv[]) {
@@ -44,7 +44,7 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    std::cout<<"\n\nDone"<<std::endl;
+    std::cout << "\n\nDone" << std::endl;
     return 0;
 }
 
@@ -68,20 +68,20 @@ void createVideoFramesBW(int start, int end, int repeatFrames) {
     thread_pool pool;
 
     for (int i = start; i <= end; i++) {
-        int index = floor((i % (6*repeatFrames))/repeatFrames);
+        int index = (i % (6 * repeatFrames)) / repeatFrames;
         pool.submit(workBW, i, index, std::ref(preloadedResized));
     }
 
     pool.wait_for_tasks();
 }
 
-void workBW(int i, int index, std::vector<std::map<std::pair<int, int>, Image>>& preloadedResized) {
+void workBW(int i, int index, std::vector<std::map<std::pair<int, int>, Image>> &preloadedResized) {
     std::string frame_name("in/img_" + std::to_string(i) + ".png");
     Image frame(frame_name.c_str());
     Image frame_done = frame.quadifyFrameBW(preloadedResized.at(index));
     std::string save_loc("out/img_" + std::to_string(i) + ".png");
     frame_done.write(save_loc.c_str());
-    std::cout<<i<<"\n";
+    std::cout << i << "\n";
 }
 
 void createVideoFramesCol(int start, int end, int repeatFrames) {
@@ -104,18 +104,18 @@ void createVideoFramesCol(int start, int end, int repeatFrames) {
     thread_pool pool;
 
     for (int i = start; i <= end; i++) {
-        int index = floor((i % (6*repeatFrames))/repeatFrames);
+        int index = (i % (6 * repeatFrames)) / repeatFrames;
         pool.submit(workCol, i, index, std::ref(preloadedResized));
     }
 
     pool.wait_for_tasks();
 }
 
-void workCol(int i, int index, std::vector<std::map<std::pair<int, int>, Image>>& preloadedResized) {
+void workCol(int i, int index, std::vector<std::map<std::pair<int, int>, Image>> &preloadedResized) {
     std::string frame_name("in/img_" + std::to_string(i) + ".png");
     Image frame(frame_name.c_str());
     Image frame_done = frame.quadifyFrameRGB(preloadedResized.at(index));
     std::string save_loc("out/img_" + std::to_string(i) + ".png");
     frame_done.write(save_loc.c_str());
-    std::cout<<i<<"\n";
+    std::cout << i << "\n";
 }
