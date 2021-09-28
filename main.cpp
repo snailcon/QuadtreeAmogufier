@@ -19,7 +19,7 @@ void showUsage() {
              <<"SFRC:       How often to repeat Sprite frames (optional, default 2)"<<std::endl;
 }
 
-int main(int argc, char *argv[0]) {
+int main(int argc, char *argv[]) {
     std::string type;
     int start, end, repeatFrames;
     if (argc < 4) {
@@ -47,7 +47,6 @@ int main(int argc, char *argv[0]) {
     std::cout<<"\n\nDone"<<std::endl;
     return 0;
 }
-
 
 void createVideoFramesBW(int start, int end, int repeatFrames) {
 
